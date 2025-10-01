@@ -1,0 +1,131 @@
+#include "mpi.h"                                                                
+#include "fftw3-mpi.h" 
+#include "Head.h"
+#include "Data.h"
+#include "BasicFunc.h"
+#include "MDESolver.h"
+#include "Initialization.h"
+#include "BasicFunc.h"
+#include "MDESolver.h"
+#include "FftwToolkit.h"
+#include "IntegrationToolkit.h"
+
+#include "config.h"
+
+
+void MDESolver2Order(Interval *range,
+                     double  *WReal,
+                     double **Q)
+//  second-order operator-splitting scheme
+{
+    double ds = ((*range).b - range->a) / range->n;
+    fftw_complex *Q_Ctmp;
+    Q_Ctmp = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*alloc_local);
+    double *Qreal  = (double *)malloc(sizeof(double) *(2*alloc_local));
+
+	for(int i = 0; i < range->n; i++)
+    {
+        memcpy(Qreal, Q[i], sizeof(double)*(2*alloc_local));
+
+        for(int j = 0; j < (2*alloc_local); j++)
+            Qreal[j] *= std::exp(-WReal[j]*ds/2.0);
+        FftwR2C(Q_Ctmp, Qreal);
+
+        for(int k = 0; k < alloc_local; k ++)
+        {
+            Q_Ctmp[k][0] *= std::exp(-Gsquarelocal[k]*ds);
+            Q_Ctmp[k][1] *= std::exp(-Gsquarelocal[k]*ds);
+		}
+        FftwC2R(Qreal, Q_Ctmp);
+        for(int j = 0; j < 2*alloc_local; j ++)
+            Qreal[j] *= std::exp(-WReal[j]*ds/2.0);
+		
+		memcpy(Q[i+1], Qreal, sizeof(double)*(2*alloc_local));
+    }
+    fftw_free(Q_Ctmp);
+    free(Qreal);
+}
+void MDESolver4Adams(Interval *range,
+                                     fftw_complex *hatW,
+                                     fftw_complex **hatQ,
+									 int *index)
+{
+  //      double ds = ((*range).b - range->a) / range->n;
+        double ds = 0.005;
+        fftw_complex *Q_Ctmp;
+        Q_Ctmp = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*alloc_local);
+        double *Qreal  = (double *)malloc(sizeof(double) *(2*alloc_local));
+        double *WReal= (double*)malloc(sizeof(double) *(2*alloc_local));
+
+        fftw_complex **temp;
+        temp = (fftw_complex **)fftw_malloc(sizeof(fftw_complex*)*3);
+        for(int i = 0; i < 3; i++)
+                temp[i] = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*alloc_local);
+        fftw_complex **tmp;
+        tmp = (fftw_complex **)fftw_malloc(sizeof(fftw_complex*)*2);
+        for(int i = 0; i < 2; i++)
+                tmp[i] = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*alloc_local);
+        fftw_complex *qConv = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*alloc_local);
+        fftw_complex *qRhs = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*alloc_local);
+        fftw_complex *wqConv = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*alloc_local);
+
+		FftwC2R(WReal,hatW);
+
+       
+        for(int i = 0; i < range->n; i++)
+        {
+                if(i < 3)
+                {
+                        for(int t = 0; t < 2; t++)
+                        {
+				 		memcpy(tmp[t], hatQ[*index+i], sizeof(fftw_complex)*alloc_local);
+                                double P = std::pow(2.0, t);
+                                for(int index1 = 0; index1 < P; index1++)
+                                {
+                                        for(int k = 0; k < alloc_local; k ++)
+                                        {
+                                                tmp[t][k][0] *= std::exp(-Gsquarelocal[k]*ds/(2.0*P));
+                                                tmp[t][k][1] *= std::exp(-Gsquarelocal[k]*ds/(2.0*P));
+                                        }
+                                        FftwC2R(Qreal, tmp[t]);
+
+                                        for(int j = 0; j < 2*alloc_local; j ++)
+                                                Qreal[j] *= std::exp(-WReal[j]*ds/P);
+                                        FftwR2C(tmp[t], Qreal);
+                                        for(int k = 0; k < alloc_local; k ++)
+                                        {
+                                                tmp[t][k][0] *= std::exp(-Gsquarelocal[k]*ds/(2.0*P));
+                                                tmp[t][k][1] *= std::exp(-Gsquarelocal[k]*ds/(2.0*P));
+                                        }
+                                }
+
+                        }
+                        FuncsLinear2Cplx(hatQ[*index+i+1],  alloc_local, -1.0/3.0, tmp[0], 4.0/3.0, tmp[1]);
+		}
+		else
+                {
+                        FuncsLinear4Cplx(qConv, alloc_local, 4.0, hatQ[*index+i], -6.0, hatQ[*index+i-1], 4.0, hatQ[*index+i-2], -1.0, hatQ[*index+i-3]);
+
+                        FuncsLinear4Cplx(qRhs,  alloc_local, 4.0, hatQ[*index+i], -3.0, hatQ[*index+i-1], 4.0/3.0, hatQ[*index+i-2], -1.0/4.0, hatQ[*index+i-3]);
+                        hatConv(wqConv, hatW, qConv);
+                        for(int k = 0; k < alloc_local; k++)
+                        {
+                                hatQ[*index+i+1][k][0] = (qRhs[k][0] - ds*wqConv[k][0]) / (25.0/12 + Gsquarelocal[k]*ds);
+                                hatQ[*index+i+1][k][1] = (qRhs[k][1] - ds*wqConv[k][1]) / (25.0/12 + Gsquarelocal[k]*ds);
+                        }
+                }
+        }
+		*index += range->n;
+       for(int i = 0; i < 3; i++) fftw_free(temp[i]);
+        fftw_free(temp);
+	        for(int i = 0; i < 2; i++) fftw_free(tmp[i]);
+        fftw_free(tmp);
+        fftw_free(Q_Ctmp);
+        free(WReal);
+        free(Qreal);
+        fftw_free(qConv);
+        fftw_free(wqConv);
+        fftw_free(qRhs);
+}
+
+
