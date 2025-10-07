@@ -1,0 +1,13 @@
+---
+description: rule
+globs: 
+alwaysApply: false
+---
+
+# 语言
+使用c 或者 c++语言
+
+# Your rule content
+
+- You can @ files here
+- You can use markdown but dont have to

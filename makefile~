@@ -1,0 +1,14 @@
+CXX=/beegfs/home/jiangkai/bin/mpicxx
+CFLAGS=-c -O2 -W -g
+INCLUDE=-I ./include 
+LIBPATH=-L ./lib 
+OBJECTS=Data FftwToolkit BasicFunc Initialization\
+		IntegrationToolkit MDESolver MemFree SCFTBaseAB GaussElimination
+all:ab
+./lib/lib%.so:./src/%.cpp
+	$(CXX) $(CFLAGS) -o $@ $< $(INCLUDE) -lfftw3_mpi -lfftw3 -I/beegfs/home/jiangkai/include -L/beegfs/home/jiangkai/lib
+ab:$(addsuffix .so, $(addprefix ./lib/lib, $(OBJECTS))) ab.cpp
+	$(CXX) -g $(INCLUDE) ab.cpp -o $@ $(LIBPATH) $(addprefix -l, $(OBJECTS)) -lfftw3_mpi -lfftw3 -I/beegfs/home/jiangkai/include -L/beegfs/home/jiangkai/lib
+clean: 
+	-rm ./lib/*.so
+	-rm ab
