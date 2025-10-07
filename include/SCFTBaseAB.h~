@@ -1,0 +1,21 @@
+#ifndef __SCFTBaseAB_h
+#define __SCFTBaseAB_h
+
+extern void updatePropagator();
+extern void updateQ();
+extern void updateOrderParameter();
+extern void updateField(double *resGradmu,  double *resGradB);
+extern double updateHamilton();
+//extern double tmp_H();
+extern void get_gradB(double dh);
+//extern void savefinals(int step, double hamilton, double size);
+extern double evlSaddle(double tol);
+extern double calPartialF();
+extern void SCFTiteration(double tol);
+
+//extern void semiImplicit(double *resGrad);
+extern void simpleMixing(double *resGradW, double *resGradB);
+
+extern void write_rho(double **RhoReal,  int iter);
+extern void cut(double *rholocalold, double *rholocalnew);
+#endif
